@@ -255,22 +255,22 @@ analyzeBtn.addEventListener('click', async ()=>{
 
   analyzeBtn.disabled = true;
   document.getElementById('results').style.display = 'none';
-  statusMsg.textContent = 'جاري تحليل صورة الوجبة...';
+  statusMsg.textContent = 'جاري تحليل الصورة واستخراج السعرات...';
 
   try{
-    const promptText = `أنت مساعد تغذية متخصص. حلل هذه الوجبة وأعد الاستجابة بصيغة JSON فقط وبدون أي نص إضافي أو علامات markdown formatting بالشكل التالي:
+    const promptText = `أنت أخصائي تغذية. قم بتحليل الوجبة الظاهرة في الصورة، وأعطني القيم التقديرية باللغة العربية.
+يجب أن ترجع إجابتك ككائن JSON فقط ولا تضع أي كلام آخر قبله أو بعده، بالصيغة التالية:
 {
-  "foods": [{"name": "اسم الصنف بالعربية", "amount": "الكمية التقريبية"}],
-  "total_calories": رقم,
-  "protein_g": رقم,
-  "carbs_g": رقم,
-  "fat_g": رقم,
-  "fiber_g": رقم,
-  "sodium_mg": رقم,
-  "sugar_level": "low" أو "medium" أو "high"
+  "foods": [{"name": "اسم الطعام", "amount": "الكمية"}],
+  "total_calories": 500,
+  "protein_g": 30,
+  "carbs_g": 40,
+  "fat_g": 15,
+  "fiber_g": 5,
+  "sodium_mg": 400,
+  "sugar_level": "low"
 }`;
 
-    // الاستدعاء المباشر عبر Pollinations AI Serverless Proxy (Gemini Engine)
     const response = await fetch("https://text.pollinations.ai/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -284,27 +284,26 @@ analyzeBtn.addEventListener('click', async ()=>{
             ]
           }
         ],
-        model: "gemini"
+        model: "openai"
       })
     });
 
     const rawText = await response.text();
     if(!rawText) throw new Error('لم يتم استلام أي رد');
 
-    let clean = rawText.replace(/```json|```/g, '').trim();
-    const firstBrace = clean.indexOf('{');
-    const lastBrace = clean.lastIndexOf('}');
-    if(firstBrace === -1 || lastBrace === -1){
-      throw new Error('فشل في قراءة نتائج تحليل الصورة، يرجى المحاولة بصورة أوضح.');
+    // تنظيف النص للحصول على JSON فقط
+    let cleanJson = rawText;
+    const match = rawText.match(/\{[\s\S]*\}/);
+    if (match) {
+      cleanJson = match[0];
     }
-    clean = clean.slice(firstBrace, lastBrace + 1);
 
-    const parsed = JSON.parse(clean);
+    const parsed = JSON.parse(cleanJson);
     renderResults(parsed);
     statusMsg.textContent = '';
   }catch(err){
     console.error(err);
-    statusMsg.textContent = 'حدث خطأ أثناء التحليل، يرجى إعادة المحاولة.';
+    statusMsg.textContent = 'تعذر حساب السعرات بدقة، يرجى إعادة محاولة التقاط صورة أوضح للوجبة.';
   }finally{
     analyzeBtn.disabled = false;
   }
@@ -321,13 +320,13 @@ function renderResults(d){
 
   const macroGrid = document.getElementById('macroGrid');
   const macros = [
-    {k:'سعرات', v:d.total_calories, u:''},
-    {k:'بروتين', v:d.protein_g, u:'غ'},
-    {k:'كارب', v:d.carbs_g, u:'غ'},
-    {k:'دهون', v:d.fat_g, u:'غ'},
+    {k:'سعرات', v: d.total_calories || d.calories || 0, u:''},
+    {k:'بروتين', v: d.protein_g || d.protein || 0, u:'غ'},
+    {k:'كارب', v: d.carbs_g || d.carbs || 0, u:'غ'},
+    {k:'دهون', v: d.fat_g || d.fat || 0, u:'غ'},
   ];
   macroGrid.innerHTML = macros.map(m=>`
-    <div class="macro"><div class="v">${m.v ?? '—'}${m.u}</div><div class="k">${m.k}</div></div>
+    <div class="macro"><div class="v">${m.v}${m.u}</div><div class="k">${m.k}</div></div>
   `).join('');
 
   const { level, badge, msg, note } = evaluateMeal(d, fastHours);
@@ -342,57 +341,44 @@ function renderResults(d){
 }
 
 function evaluateMeal(d, hours){
-  const cal = d.total_calories || 0;
-  const protein = d.protein_g || 0;
-  const fiber = d.fiber_g || 0;
-  const sodium = d.sodium_mg || 0;
+  const cal = d.total_calories || d.calories || 0;
+  const protein = d.protein_g || d.protein || 0;
+  const fiber = d.fiber_g || d.fiber || 0;
+  const sodium = d.sodium_mg || d.sodium || 0;
   const sugar = d.sugar_level || 'medium';
   const eatingWindow = 24 - hours;
 
   const mealsInWindow = eatingWindow <= 8 ? 2 : 3;
-  const dailyBudgetLow = 1400, dailyBudgetHigh = 1900;
+  const dailyBudgetHigh = 1900;
   const perMealHigh = dailyBudgetHigh / mealsInWindow;
-  const perMealLow = dailyBudgetLow / mealsInWindow * 0.5;
 
-  const proteinRatio = cal>0 ? (protein*4)/cal : 0;
+  const proteinRatio = cal > 0 ? (protein * 4) / cal : 0;
 
   let level='good', badge='مناسبة ✓', msg='', notes=[];
 
   if(cal > perMealHigh * 1.3){
     level='bad';
     badge='سعرات مرتفعة';
-    msg=`هذه الوجبة (${cal} سعرة) مرتفعة نسبياً لوجبة واحدة ضمن نافذة أكل مدتها ${eatingWindow} ساعة. قد تستهلك جزءاً كبيراً من ميزانيتك اليومية.`;
+    msg=`هذه الوجبة تحتوي على (${cal} سعرة) وهو مرتفع لوجبة واحدة في نافذة أكل مدتها ${eatingWindow} ساعة.`;
   } else if(cal > perMealHigh){
     level='warn';
     badge='ضمن الحد الأعلى';
-    msg=`الوجبة (${cal} سعرة) في الحد الأعلى المقبول لوجبة ضمن خطتك. راقب باقي وجباتك اليوم.`;
+    msg=`الوجبة تحوي (${cal} سعرة) وهي في الحد الأعلى المقبول. راقب بقية وجباتك.`;
   } else {
-    msg=`الوجبة (${cal} سعرة) تتناسب مع نافذة أكل ${eatingWindow} ساعة وخطة إنقاص الوزن.`;
+    msg=`الوجبة متوازنة وتحوي (${cal} سعرة حرارية) وتتناسب مع نظام صيامك.`;
   }
 
   if(proteinRatio < 0.20){
-    notes.push('نسبة البروتين منخفضة نسبياً — البروتين العالي يساعد على الشبع خلال ساعات الصيام الطويلة، حاول إضافة مصدر بروتين (بيض، دجاج، لبن زبادي، بقوليات).');
+    notes.push('نسبة البروتين منخفضة — يفضل زيادة البروتين للشبع أثناء الصيام.');
   } else {
-    notes.push('نسبة البروتين جيدة، وهذا يساعد على تحمّل ساعات الصيام دون جوع شديد.');
+    notes.push('كمية البروتين ممتازة وتساعدك على الصمود أثناء ساعات الصيام.');
   }
 
   if(fiber && fiber < 5){
-    notes.push('الألياف منخفضة — أضف خضار أو حبوب كاملة لتحسين الشبع وصحة الجهاز الهضمي أثناء الصيام.');
+    notes.push('الألياف قليلة — ينصح بزيادة الخضار أو الألياف.');
   }
 
-  if(sugar === 'high'){
-    notes.push('محتوى السكر مرتفع، وقد يسبب ارتفاعاً ثم هبوطاً سريعاً في الطاقة أثناء ساعات الصيام التالية.');
-  }
-
-  if(sodium && sodium > 900){
-    notes.push('محتوى الصوديوم مرتفع نسبياً، ما قد يزيد الإحساس بالعطش خلال الصيام.');
-  }
-
-  if(hours >= 18 && cal < perMealLow){
-    notes.push(`مع صيام ${hours} ساعة، تأكد أن إجمالي وجباتك في نافذة الأكل يغطي احتياجك اليومي حتى لا يحدث نقص كبير في الطاقة.`);
-  }
-
-  const note = '<b>ملاحظات:</b><br>' + notes.map(n=>'• '+n).join('<br>');
+  const note = '<b>ملاحظات التغذية:</b><br>' + notes.map(n=>'• '+n).join('<br>');
   return { level, badge, msg, note };
 }
 </script>
