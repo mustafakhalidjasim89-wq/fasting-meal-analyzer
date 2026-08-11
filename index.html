@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>محلّل وجبات الصيام المتقطع</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#161B22;
+    --panel:#1F2733;
+    --panel-2:#26303F;
+    --paper:#F5F1E8;
+    --amber:#E8A33D;
+    --teal:#3D9188;
+    --coral:#E2604F;
+    --line: rgba(245,241,232,0.12);
+    --muted: rgba(245,241,232,0.55);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color: transparent;}
+  html,body{margin:0; padding:0; background:var(--ink); color:var(--paper); font-family:'Tajawal',sans-serif;}
+  body{
+    min-height:100vh;
+    display:flex; justify-content:center;
+    padding: 22px 14px 60px;
+  }
+  .app{width:100%; max-width:460px;}
+
+  /* Header */
+  header{ text-align:center; margin-bottom:22px; }
+  .eyebrow{
+    font-family:'Space Mono',monospace; letter-spacing:.18em; font-size:11px;
+    color:var(--amber); text-transform:uppercase; margin-bottom:6px;
+  }
+  h1{ font-size:23px; font-weight:900; margin:0 0 4px; line-height:1.35; }
+  .sub{ color:var(--muted); font-size:13.5px; margin:0; }
+
+  /* SVG Ring */
+  .ring-wrap{ display:flex; justify-content:center; margin: 22px 0 26px; position:relative; }
+  svg.ring{ width: 190px; height:190px; }
+  .ring-center{
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    text-align:center;
+  }
+  .ring-center .num{ font-family:'Space Mono',monospace; font-size:30px; font-weight:700; }
+  .ring-center .lbl{ font-size:11px; color:var(--muted); margin-top:2px; }
+
+  .legend{ display:flex; justify-content:center; gap:18px; margin-top:10px; font-size:12px; color:var(--muted);}
+  .legend span{ display:inline-flex; align-items:center; gap:6px;}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block;}
+
+  section{ margin-bottom:20px; }
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:16px;
+    padding:16px;
+  }
+  label.field-label{ display:block; font-size:12.5px; color:var(--muted); margin-bottom:9px; }
+
+  .choice-row{ display:flex; gap:8px; }
+  .choice{
+    flex:1; text-align:center; padding:11px 4px; border-radius:11px;
+    border:1px solid var(--line); background:var(--panel-2);
+    font-family:'Space Mono',monospace; font-size:14px; font-weight:700;
+    color:var(--paper); cursor:pointer; transition: all .15s ease;
+  }
+  .choice.active{ background:var(--amber); color:#1a1206; border-color:var(--amber); }
+
+  .photo-btns{ display:flex; gap:10px; margin-top:14px; }
+  .photo-zone{
+    flex:1;
+    border:1.5px dashed var(--line); border-radius:14px;
+    padding:18px 8px; text-align:center; cursor:pointer;
+    transition:border-color .15s ease;
+  }
+  .photo-zone:active{ border-color:var(--amber); }
+  .photo-zone .icon{ font-size:24px; margin-bottom:6px; }
+  .photo-zone .txt{ font-size:12.5px; color:var(--muted); }
+  #cameraInput, #galleryInput{ display:none; }
+  #preview{ width:100%; border-radius:12px; margin-top:12px; display:none; max-height:260px; object-fit:cover; }
+
+  button.primary{
+    width:100%; margin-top:14px; padding:15px; border:none; border-radius:12px;
+    background:var(--teal); color:#08201d; font-family:'Tajawal',sans-serif;
+    font-size:15.5px; font-weight:700; cursor:pointer;
+  }
+  button.primary:disabled{ opacity:.5; cursor:not-allowed; }
+  button.primary:active:not(:disabled){ transform: scale(.985); }
+
+  .status{ text-align:center; font-size:13px; color:var(--muted); margin-top:12px; min-height:16px; word-break: break-word; }
+
+  /* Results */
+  #results{ display:none; }
+  .verdict{
+    border-radius:14px; padding:16px; margin-bottom:14px;
+    border:1px solid var(--line);
+  }
+  .verdict.good{ background: rgba(61,145,136,0.16); border-color: var(--teal); }
+  .verdict.warn{ background: rgba(232,163,61,0.14); border-color: var(--amber); }
+  .verdict.bad{ background: rgba(226,96,79,0.15); border-color: var(--coral); }
+  .verdict .badge{ font-family:'Space Mono',monospace; font-size:11px; letter-spacing:.1em; text-transform:uppercase; opacity:.8; margin-bottom:6px;}
+  .verdict .msg{ font-size:15px; font-weight:700; line-height:1.6; }
+
+  .macro-grid{ display:grid; grid-template-columns: repeat(4,1fr); gap:8px; margin-bottom:14px; }
+  .macro{ background:var(--panel-2); border-radius:11px; padding:10px 4px; text-align:center; }
+  .macro .v{ font-family:'Space Mono',monospace; font-weight:700; font-size:15px; }
+  .macro .k{ font-size:10.5px; color:var(--muted); margin-top:2px; }
+
+  .foods-list{ list-style:none; padding:0; margin:0; }
+  .foods-list li{
+    display:flex; justify-content:space-between; padding:9px 0;
+    border-bottom:1px solid var(--line); font-size:13.5px;
+  }
+  .foods-list li:last-child{ border-bottom:none; }
+  .foods-list .amt{ color:var(--muted); font-family:'Space Mono',monospace; font-size:12.5px; }
+
+  .note-box{
+    margin-top:14px; padding:13px; border-radius:11px; background:var(--panel-2);
+    font-size:13px; line-height:1.8; color:var(--paper);
+  }
+  .note-box b{ color:var(--amber); }
+
+  footer{ text-align:center; margin-top:26px; font-size:11px; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="eyebrow">صيام متقطع · تحليل بالذكاء الاصطناعي</div>
+    <h1>هل هذه الوجبة مناسبة لصيامك؟</h1>
+    <p class="sub">صوّر وجبتك، وسنحسب سعراتها ونطابقها مع نافذة صيامك</p>
+  </header>
+
+  <div class="ring-wrap">
+    <svg class="ring" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="42" fill="none" stroke="#2E3947" stroke-width="10"/>
+      <circle id="fastArc" cx="50" cy="50" r="42" fill="none" stroke="#3D9188" stroke-width="10"
+        stroke-linecap="round" transform="rotate(-90 50 50)"/>
+      <circle id="eatArc" cx="50" cy="50" r="42" fill="none" stroke="#E8A33D" stroke-width="10"
+        stroke-linecap="round" transform="rotate(-90 50 50)"/>
+    </svg>
+    <div class="ring-center">
+      <div class="num" id="ringHours">16</div>
+      <div class="lbl">ساعة صيام</div>
+    </div>
+  </div>
+  <div class="legend">
+    <span><i class="dot" style="background:#3D9188"></i>الصيام</span>
+    <span><i class="dot" style="background:#E8A33D"></i>نافذة الأكل</span>
+  </div>
+
+  <section class="card">
+    <label class="field-label">مدة الصيام</label>
+    <div class="choice-row" id="fastChoices">
+      <div class="choice" data-h="14">١٤</div>
+      <div class="choice active" data-h="16">١٦</div>
+      <div class="choice" data-h="18">١٨</div>
+      <div class="choice" data-h="20">٢٠</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <label class="field-label">صورة الوجبة</label>
+    <div class="photo-btns">
+      <div class="photo-zone" id="cameraZone">
+        <div class="icon">📷</div>
+        <div class="txt">التقط صورة</div>
+      </div>
+      <div class="photo-zone" id="galleryZone">
+        <div class="icon">🖼️</div>
+        <div class="txt">من المعرض</div>
+      </div>
+    </div>
+    <input type="file" id="cameraInput" accept="image/*" capture="environment">
+    <input type="file" id="galleryInput" accept="image/*">
+    <img id="preview" alt="معاينة الوجبة">
+    <button class="primary" id="analyzeBtn" disabled>حلّل الوجبة</button>
+    <div class="status" id="statusMsg"></div>
+  </section>
+
+  <section id="results">
+    <div class="verdict" id="verdictBox">
+      <div class="badge" id="verdictBadge">التقييم</div>
+      <div class="msg" id="verdictMsg"></div>
+    </div>
+
+    <div class="card">
+      <label class="field-label">الأصناف المكتشفة</label>
+      <ul class="foods-list" id="foodsList"></ul>
+    </div>
+
+    <div class="macro-grid" id="macroGrid"></div>
+
+    <div class="note-box" id="noteBox"></div>
+  </section>
+
+  <footer>تقدير بـ Google Gemini — قد يختلف عن القيم الفعلية. للتوجيه العام وليس بديلاً عن استشارة طبية.</footer>
+</div>
+
+<script>
+// 🔑 احصل على المفتاح المجاني من https://aistudio.google.com/ وضعه هنا:
+const GEMINI_API_KEY = "AQ.Ab8RN6JwOMHbu0rTjCJ5jJKu2rong6NPm76P4rzBBpNjg8nt7g";
+
+let fastHours = 16;
+let imageBase64 = null;
+let imageMediaType = null;
+
+// Ring drawing
+const R = 42, C = 2*Math.PI*R;
+function drawRing(h){
+  const eatFrac = (24 - h) / 24;
+  const fastFrac = h / 24;
+  const fastArc = document.getElementById('fastArc');
+  const eatArc = document.getElementById('eatArc');
+  fastArc.style.strokeDasharray = `${C*fastFrac} ${C}`;
+  fastArc.style.strokeDashoffset = 0;
+  eatArc.style.strokeDasharray = `${C*eatFrac} ${C}`;
+  eatArc.style.strokeDashoffset = -C*fastFrac;
+  document.getElementById('ringHours').textContent = h.toLocaleString('ar-EG');
+}
+drawRing(fastHours);
+
+document.querySelectorAll('#fastChoices .choice').forEach(el=>{
+  el.addEventListener('click', ()=>{
+    document.querySelectorAll('#fastChoices .choice').forEach(c=>c.classList.remove('active'));
+    el.classList.add('active');
+    fastHours = parseInt(el.dataset.h,10);
+    drawRing(fastHours);
+  });
+});
+
+const cameraZone = document.getElementById('cameraZone');
+const galleryZone = document.getElementById('galleryZone');
+const cameraInput = document.getElementById('cameraInput');
+const galleryInput = document.getElementById('galleryInput');
+const preview = document.getElementById('preview');
+const analyzeBtn = document.getElementById('analyzeBtn');
+const statusMsg = document.getElementById('statusMsg');
+
+cameraZone.addEventListener('click', ()=> cameraInput.click());
+galleryZone.addEventListener('click', ()=> galleryInput.click());
+
+function handleFile(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  imageMediaType = file.type || 'image/jpeg';
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    const result = reader.result;
+    imageBase64 = result.split(',')[1];
+    preview.src = result;
+    preview.style.display = 'block';
+    analyzeBtn.disabled = false;
+    statusMsg.textContent = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+cameraInput.addEventListener('change', handleFile);
+galleryInput.addEventListener('change', handleFile);
+
+analyzeBtn.addEventListener('click', async ()=>{
+  if(!GEMINI_API_KEY || GEMINI_API_KEY.includes("ضع_مفتاح") || /[^\x00-\x7F]/.test(GEMINI_API_KEY)){
+    statusMsg.textContent = '❌ يرجى إضافة مفتاح Gemini API Key الصحيح في الكود أولاً.';
+    return;
+  }
+  if(!imageBase64) return;
+
+  analyzeBtn.disabled = true;
+  document.getElementById('results').style.display = 'none';
+  statusMsg.textContent = 'جاري تحليل الصورة عبر Gemini…';
+
+  try{
+    const promptText = `أنت مساعد تغذية متخصص. حلل هذه الوجبة وأعد الاستجابة بصيغة JSON فقط بدون أي نص إضافي أو علامات markdown formatting بالشكل التالي بالضبط:
+{
+  "foods": [{"name": "اسم الصنف بالعربية", "amount": "الكمية التقريبية"}],
+  "total_calories": رقم,
+  "protein_g": رقم,
+  "carbs_g": رقم,
+  "fat_g": رقم,
+  "fiber_g": رقم,
+  "sodium_mg": رقم,
+  "sugar_level": "low" أو "medium" أو "high"
+}`;
+
+    // Google Gemini API REST Endpoint
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY.trim()}`;
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: promptText },
+            {
+              inline_data: {
+                mime_type: imageMediaType,
+                data: imageBase64
+              }
+            }
+          ]
+        }]
+      })
+    });
+
+    const data = await response.json();
+
+    if(data.error){
+      throw new Error(data.error.message || 'حدث خطأ في طلب Gemini API');
+    }
+
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if(!rawText) throw new Error('لم يتم استقبال رد من النموذج');
+
+    let clean = rawText.replace(/```json|```/g, '').trim();
+    const firstBrace = clean.indexOf('{');
+    const lastBrace = clean.lastIndexOf('}');
+    if(firstBrace === -1 || lastBrace === -1){
+      throw new Error('البيانات المُرجعة ليست بصيغة JSON صالحة');
+    }
+    clean = clean.slice(firstBrace, lastBrace + 1);
+
+    const parsed = JSON.parse(clean);
+    renderResults(parsed);
+    statusMsg.textContent = '';
+  }catch(err){
+    console.error(err);
+    statusMsg.textContent = 'خطأ: ' + (err.message || 'تعذر التحليل، حاول مجدداً.');
+  }finally{
+    analyzeBtn.disabled = false;
+  }
+});
+
+function renderResults(d){
+  const foodsList = document.getElementById('foodsList');
+  foodsList.innerHTML = '';
+  (d.foods||[]).forEach(f=>{
+    const li = document.createElement('li');
+    li.innerHTML = `<span>${f.name}</span><span class="amt">${f.amount||''}</span>`;
+    foodsList.appendChild(li);
+  });
+
+  const macroGrid = document.getElementById('macroGrid');
+  const macros = [
+    {k:'سعرات', v:d.total_calories, u:''},
+    {k:'بروتين', v:d.protein_g, u:'غ'},
+    {k:'كارب', v:d.carbs_g, u:'غ'},
+    {k:'دهون', v:d.fat_g, u:'غ'},
+  ];
+  macroGrid.innerHTML = macros.map(m=>`
+    <div class="macro"><div class="v">${m.v ?? '—'}${m.u}</div><div class="k">${m.k}</div></div>
+  `).join('');
+
+  const { level, badge, msg, note } = evaluateMeal(d, fastHours);
+  const box = document.getElementById('verdictBox');
+  box.className = 'verdict ' + level;
+  document.getElementById('verdictBadge').textContent = badge;
+  document.getElementById('verdictMsg').textContent = msg;
+  document.getElementById('noteBox').innerHTML = note;
+
+  document.getElementById('results').style.display = 'block';
+  document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function evaluateMeal(d, hours){
+  const cal = d.total_calories || 0;
+  const protein = d.protein_g || 0;
+  const fiber = d.fiber_g || 0;
+  const sodium = d.sodium_mg || 0;
+  const sugar = d.sugar_level || 'medium';
+  const eatingWindow = 24 - hours;
+
+  const mealsInWindow = eatingWindow <= 8 ? 2 : 3;
+  const dailyBudgetLow = 1400, dailyBudgetHigh = 1900;
+  const perMealHigh = dailyBudgetHigh / mealsInWindow;
+  const perMealLow = dailyBudgetLow / mealsInWindow * 0.5;
+
+  const proteinRatio = cal>0 ? (protein*4)/cal : 0;
+
+  let level='good', badge='مناسبة ✓', msg='', notes=[];
+
+  if(cal > perMealHigh * 1.3){
+    level='bad';
+    badge='سعرات مرتفعة';
+    msg=`هذه الوجبة (${cal} سعرة) مرتفعة نسبياً لوجبة واحدة ضمن نافذة أكل مدتها ${eatingWindow} ساعة. قد تستهلك جزءاً كبيراً من ميزانيتك اليومية.`;
+  } else if(cal > perMealHigh){
+    level='warn';
+    badge='ضمن الحد الأعلى';
+    msg=`الوجبة (${cal} سعرة) في الحد الأعلى المقبول لوجبة ضمن خطتك. راقب باقي وجباتك اليوم.`;
+  } else {
+    msg=`الوجبة (${cal} سعرة) تتناسب مع نافذة أكل ${eatingWindow} ساعة وخطة إنقاص الوزن.`;
+  }
+
+  if(proteinRatio < 0.20){
+    notes.push('نسبة البروتين منخفضة نسبياً — البروتين العالي يساعد على الشبع خلال ساعات الصيام الطويلة، حاول إضافة مصدر بروتين (بيض، دجاج، لبن زبادي، بقوليات).');
+  } else {
+    notes.push('نسبة البروتين جيدة، وهذا يساعد على تحمّل ساعات الصيام دون جوع شديد.');
+  }
+
+  if(fiber && fiber < 5){
+    notes.push('الألياف منخفضة — أضف خضار أو حبوب كاملة لتحسين الشبع وصحة الجهاز الهضمي أثناء الصيام.');
+  }
+
+  if(sugar === 'high'){
+    notes.push('محتوى السكر مرتفع، وقد يسبب ارتفاعاً ثم هبوطاً سريعاً في الطاقة أثناء ساعات الصيام التالية.');
+  }
+
+  if(sodium && sodium > 900){
+    notes.push('محتوى الصوديوم مرتفع نسبياً، ما قد يزيد الإحساس بالعطش خلال الصيام.');
+  }
+
+  if(hours >= 18 && cal < perMealLow){
+    notes.push(`مع صيام ${hours} ساعة، تأكد أن إجمالي وجباتك في نافذة الأكل يغطي احتياجك اليومي حتى لا يحدث نقص كبير في الطاقة.`);
+  }
+
+  const note = '<b>ملاحظات:</b><br>' + notes.map(n=>'• '+n).join('<br>');
+  return { level, badge, msg, note };
+}
+</script>
+</body>
+</html>
