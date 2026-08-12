@@ -55,6 +55,13 @@
   }
   label.field-label{ display:block; font-size:12.5px; color:var(--muted); margin-bottom:9px; }
 
+  input.api-input {
+    width: 100%; padding: 12px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--panel-2);
+    color: var(--paper); font-family: 'Space Mono', monospace;
+    font-size: 13px; margin-bottom: 12px; text-align: left;
+  }
+
   .choice-row{ display:flex; gap:8px; }
   .choice{
     flex:1; text-align:center; padding:11px 4px; border-radius:11px;
@@ -148,6 +155,9 @@
   </div>
 
   <section class="card">
+    <label class="field-label">مفتاح API (Gemini Key)</label>
+    <input type="password" id="apiKeyInput" class="api-input" placeholder="AIzaSyBhhPFp1UW18GmDAvLvgqMVe54onygk_yU">
+    
     <label class="field-label">مدة الصيام</label>
     <div class="choice-row" id="fastChoices">
       <div class="choice" data-h="14">١٤</div>
@@ -198,6 +208,15 @@
 <script>
 let fastHours = 16;
 let imageBase64Data = null;
+
+// حفظ واسترجاع المفتاح من الـ LocalStorage للتسهيل على المستخدم
+const apiKeyInput = document.getElementById('apiKeyInput');
+if(localStorage.getItem('gemini_api_key')){
+  apiKeyInput.value = localStorage.getItem('gemini_api_key');
+}
+apiKeyInput.addEventListener('input', ()=>{
+  localStorage.setItem('gemini_api_key', apiKeyInput.value.trim());
+});
 
 const R = 42, C = 2*Math.PI*R;
 function drawRing(h){
@@ -251,59 +270,67 @@ cameraInput.addEventListener('change', handleFile);
 galleryInput.addEventListener('change', handleFile);
 
 analyzeBtn.addEventListener('click', async ()=>{
+  const apiKey = apiKeyInput.value.trim();
+  if(!apiKey){
+    statusMsg.textContent = 'يرجى إدخال مفتاح الـ API في الخانة المخصصة أولاً.';
+    return;
+  }
   if(!imageBase64Data) return;
 
   analyzeBtn.disabled = true;
   document.getElementById('results').style.display = 'none';
-  statusMsg.textContent = 'جاري تحليل الصورة واستخراج السعرات...';
+  statusMsg.textContent = 'جاري تحليل الصورة عبر Gemini...';
 
   try{
-    const promptText = `أنت أخصائي تغذية. قم بتحليل الوجبة الظاهرة في الصورة، وأعطني القيم التقديرية باللغة العربية.
-يجب أن ترجع إجابتك ككائن JSON فقط ولا تضع أي كلام آخر قبله أو بعده، بالصيغة التالية:
+    // استخراج بيانات الـ Base64 الصافية بدون الهيدر
+    const base64Pure = imageBase64Data.split(',')[1];
+    const mimeType = imageBase64Data.split(';')[0].split(':')[1];
+
+    const promptText = `أنت أخصائي تغذية خبير. قم بتحليل الصورة بدقة، وتقديم البيانات بصيغة JSON فقط بدون أي أقواس markdown أو نصوص إضافية، بالشكل التالي:
 {
-  "foods": [{"name": "اسم الطعام", "amount": "الكمية"}],
-  "total_calories": 500,
-  "protein_g": 30,
-  "carbs_g": 40,
-  "fat_g": 15,
-  "fiber_g": 5,
-  "sodium_mg": 400,
+  "foods": [{"name": "اسم الصنف", "amount": "الكمية التقريبية"}],
+  "total_calories": 450,
+  "protein_g": 25,
+  "carbs_g": 35,
+  "fat_g": 12,
+  "fiber_g": 4,
+  "sodium_mg": 300,
   "sugar_level": "low"
 }`;
 
-    const response = await fetch("https://text.pollinations.ai/", {
+    // استدعاء Gemini API الرسمي المباشر
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: promptText },
-              { type: "image_url", image_url: { url: imageBase64Data } }
-            ]
-          }
-        ],
-        model: "openai"
+        contents: [{
+          parts: [
+            { text: promptText },
+            { inline_data: { mime_type: mimeType, data: base64Pure } }
+          ]
+        }]
       })
     });
 
-    const rawText = await response.text();
-    if(!rawText) throw new Error('لم يتم استلام أي رد');
-
-    // تنظيف النص للحصول على JSON فقط
-    let cleanJson = rawText;
-    const match = rawText.match(/\{[\s\S]*\}/);
-    if (match) {
-      cleanJson = match[0];
+    const resData = await response.json();
+    if(resData.error){
+      throw new Error(resData.error.message || 'خطأ في المفتاح أو الخدمة');
     }
+
+    const rawText = resData.candidates[0].content.parts[0].text;
+    
+    // تنظيف النتيجة لاستخراج JSON فقط
+    let cleanJson = rawText.replace(/```json|```/g, '').trim();
+    const firstBrace = cleanJson.indexOf('{');
+    const lastBrace = cleanJson.lastIndexOf('}');
+    cleanJson = cleanJson.slice(firstBrace, lastBrace + 1);
 
     const parsed = JSON.parse(cleanJson);
     renderResults(parsed);
     statusMsg.textContent = '';
   }catch(err){
     console.error(err);
-    statusMsg.textContent = 'تعذر حساب السعرات بدقة، يرجى إعادة محاولة التقاط صورة أوضح للوجبة.';
+    statusMsg.textContent = 'خطأ أثناء التحليل: ' + (err.message || 'يرجى التأكد من صحة المفتاح والصورة.');
   }finally{
     analyzeBtn.disabled = false;
   }
@@ -320,10 +347,10 @@ function renderResults(d){
 
   const macroGrid = document.getElementById('macroGrid');
   const macros = [
-    {k:'سعرات', v: d.total_calories || d.calories || 0, u:''},
-    {k:'بروتين', v: d.protein_g || d.protein || 0, u:'غ'},
-    {k:'كارب', v: d.carbs_g || d.carbs || 0, u:'غ'},
-    {k:'دهون', v: d.fat_g || d.fat || 0, u:'غ'},
+    {k:'سعرات', v: d.total_calories || 0, u:''},
+    {k:'بروتين', v: d.protein_g || 0, u:'غ'},
+    {k:'كارب', v: d.carbs_g || 0, u:'غ'},
+    {k:'دهون', v: d.fat_g || 0, u:'غ'},
   ];
   macroGrid.innerHTML = macros.map(m=>`
     <div class="macro"><div class="v">${m.v}${m.u}</div><div class="k">${m.k}</div></div>
@@ -341,10 +368,10 @@ function renderResults(d){
 }
 
 function evaluateMeal(d, hours){
-  const cal = d.total_calories || d.calories || 0;
-  const protein = d.protein_g || d.protein || 0;
-  const fiber = d.fiber_g || d.fiber || 0;
-  const sodium = d.sodium_mg || d.sodium || 0;
+  const cal = d.total_calories || 0;
+  const protein = d.protein_g || 0;
+  const fiber = d.fiber_g || 0;
+  const sodium = d.sodium_mg || 0;
   const sugar = d.sugar_level || 'medium';
   const eatingWindow = 24 - hours;
 
@@ -359,23 +386,23 @@ function evaluateMeal(d, hours){
   if(cal > perMealHigh * 1.3){
     level='bad';
     badge='سعرات مرتفعة';
-    msg=`هذه الوجبة تحتوي على (${cal} سعرة) وهو مرتفع لوجبة واحدة في نافذة أكل مدتها ${eatingWindow} ساعة.`;
+    msg=`تحتوي هذه الوجبة على (${cal} سعرة) وهو مرتفع نسبياً لوجبة واحدة في نافذة أكل مدتها ${eatingWindow} ساعة.`;
   } else if(cal > perMealHigh){
     level='warn';
     badge='ضمن الحد الأعلى';
-    msg=`الوجبة تحوي (${cal} سعرة) وهي في الحد الأعلى المقبول. راقب بقية وجباتك.`;
+    msg=`تحتوي الوجبة على (${cal} سعرة) وهي في الحد الأعلى المقبول. انتبه لبقية وجبات اليوم.`;
   } else {
-    msg=`الوجبة متوازنة وتحوي (${cal} سعرة حرارية) وتتناسب مع نظام صيامك.`;
+    msg=`الوجبة متوازنة وتوفر (${cal} سعرة) وتناسب جدول صيامك المتقطع.`;
   }
 
   if(proteinRatio < 0.20){
-    notes.push('نسبة البروتين منخفضة — يفضل زيادة البروتين للشبع أثناء الصيام.');
+    notes.push('مستوى البروتين قليل — يُنصح بإضافة مصدر بروتين لضمان الشبع الممتد أثناء الصيام.');
   } else {
-    notes.push('كمية البروتين ممتازة وتساعدك على الصمود أثناء ساعات الصيام.');
+    notes.push('كمية البروتين ممتازة وتساعد في الحفاظ على الكتلة العضلية وتحمل الصيام.');
   }
 
   if(fiber && fiber < 5){
-    notes.push('الألياف قليلة — ينصح بزيادة الخضار أو الألياف.');
+    notes.push('نسبة الألياف منخفضة — يفضل إضافة خضار أو ألياف لتسهيل الهضم.');
   }
 
   const note = '<b>ملاحظات التغذية:</b><br>' + notes.map(n=>'• '+n).join('<br>');
